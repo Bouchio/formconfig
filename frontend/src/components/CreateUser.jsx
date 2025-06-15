@@ -1,27 +1,28 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useMutation } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Sheet, Typography, Button, Input, Select, Option,
-  FormControl, FormLabel, FormHelperText, Checkbox, Chip, ChipDelete,
+  FormControl, FormLabel, FormHelperText, Checkbox, Chip, ChipDelete, CircularProgress,
 } from '@mui/joy';
 import { toast } from 'react-hot-toast';
 import { formConfigToZodSchema } from '../formConfigToZodSchema';
-import FormConfig from '../FormConfig.json';
-import { z } from 'zod';
 import { CREATE_DRAFT_USER, UPDATE_USER, DELETE_USER } from '../graphql/mutations';
+import { GET_FORM_CONFIG } from '../graphql/queries';
 
 const CreateUser = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     id: '',
     matricule: '',
+    NIR: '',
     firstName: '',
     lastName: '',
     username: '',
     email: '',
     age: '',
     birthDate: '',
+    endDate: '',
     gender: '',
     address: '',
     phone: '',
@@ -31,13 +32,18 @@ const CreateUser = () => {
   const [errors, setErrors] = useState({});
   const [hobbyInput, setHobbyInput] = useState('');
 
+  // Récupérer la configuration depuis la BDD
+  const { loading: configLoading, error: configError, data: configData } = useQuery(GET_FORM_CONFIG, {
+    variables: { formName: 'createUser' },
+  });
+
   const [createDraftUser, { loading: draftLoading }] = useMutation(CREATE_DRAFT_USER, {
     onCompleted: (data) => {
-      const draftId = data.createDraftUser.id; // Ajuste à .id si ta mutation utilise id
+      const draftId = data.createDraftUser.id;
       setFormData((prevData) => ({ ...prevData, id: draftId }));
       localStorage.setItem('draftUserId', draftId);
-      console.log('Draft user created with ID:', draftId);
-      console.log('localStorage draftUserId:', localStorage.getItem('draftUserId'));
+      // console.log('Draft user created with ID:', draftId);
+      // console.log('localStorage draftUserId:', localStorage.getItem('draftUserId'));
     },
     onError: (error) => {
       toast.error(`Error creating draft user: ${error.message}`);
@@ -50,7 +56,7 @@ const CreateUser = () => {
       localStorage.removeItem('draftUserId');
       toast.success('User created successfully');
       navigate('/');
-      console.log('Draft submitted, localStorage cleared:', localStorage.getItem('draftUserId'));
+      // console.log('Draft submitted, localStorage cleared:', localStorage.getItem('draftUserId'));
     },
     onError: (error) => {
       toast.error(`Error updating user: ${error.message}`);
@@ -72,11 +78,11 @@ const CreateUser = () => {
     const initializeDraft = async () => {
       const savedDraftId = localStorage.getItem('draftUserId');
       if (savedDraftId) {
-        console.log('Reusing existing draft ID:', savedDraftId);
+        // console.log('Reusing existing draft ID:', savedDraftId);
         setFormData((prevData) => ({ ...prevData, id: savedDraftId }));
       } else if (!hasCreated) {
         hasCreated = true;
-        console.log('Creating new draft user');
+        // console.log('Creating new draft user');
         try {
           await createDraftUser();
         } catch (error) {
@@ -90,7 +96,7 @@ const CreateUser = () => {
     // Gérer les rechargements
     const handleBeforeUnload = (event) => {
       localStorage.setItem('isReloading', 'true');
-      console.log('Before unload, isReloading set to true');
+      // console.log('Before unload, isReloading set to true');
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -101,12 +107,12 @@ const CreateUser = () => {
       const isReloading = localStorage.getItem('isReloading') === 'true';
       const draftId = localStorage.getItem('draftUserId');
       if (draftId && !isReloading) {
-        console.log('Cleaning up draft ID:', draftId);
+        // console.log('Cleaning up draft ID:', draftId);
         deleteUser({ variables: { id: draftId } })
           .then(() => {
             localStorage.removeItem('draftUserId');
-            console.log('Draft deleted successfully:', draftId);
-            console.log('localStorage after cleanup:', localStorage.getItem('draftUserId'));
+            // console.log('Draft deleted successfully:', draftId);
+            // console.log('localStorage after cleanup:', localStorage.getItem('draftUserId'));
           })
           .catch((error) => {
             console.error('Failed to delete draft during cleanup:', error);
@@ -114,12 +120,16 @@ const CreateUser = () => {
       }
       if (isReloading) {
         localStorage.removeItem('isReloading');
-        console.log('Reload detected, isReloading cleared');
+        // console.log('Reload detected, isReloading cleared');
       }
     };
-  }, []); // Pas de dépendances pour exécution unique au montage
+  }, []);
 
-  const validationSchema = useMemo(() => formConfigToZodSchema(FormConfig), []);
+  // Générer le schéma de validation à partir de la config BDD
+  const validationSchema = useMemo(() => {
+    if (!configData?.formConfigByName?.config) return null;
+    return formConfigToZodSchema(configData.formConfigByName.config);
+  }, [configData]);
 
   const handleChange = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
@@ -166,6 +176,10 @@ const CreateUser = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validationSchema) {
+      toast.error('Form configuration not loaded');
+      return;
+    }
     const dataToValidate = transformFormDataForZod(formData);
     const result = validationSchema.safeParse(dataToValidate);
     if (!result.success) {
@@ -181,7 +195,7 @@ const CreateUser = () => {
     setErrors({});
     const input = { ...result.data };
     delete input.id;
-    console.log('Submitting data:', { id: formData.id, input });
+    // console.log('Submitting data:', { id: formData.id, input });
     try {
       await updateUser({ variables: { id: formData.id, input } });
     } catch (error) {
@@ -192,18 +206,42 @@ const CreateUser = () => {
   const handleCancel = async () => {
     const draftId = formData.id;
     if (draftId) {
-      console.log('Canceling, deleting draft ID:', draftId);
+      // console.log('Canceling, deleting draft ID:', draftId);
       try {
         await deleteUser({ variables: { id: draftId } });
         localStorage.removeItem('draftUserId');
-        console.log('Draft deleted successfully on cancel:', draftId);
-        console.log('localStorage after cancel:', localStorage.getItem('draftUserId'));
+        // console.log('Draft deleted successfully on cancel:', draftId);
+        // console.log('localStorage after cancel:', localStorage.getItem('draftUserId'));
       } catch (error) {
         console.error('Failed to delete draft on cancel:', error);
       }
     }
     navigate('/');
   };
+
+  // Gérer le chargement et les erreurs de la configuration
+  if (configLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (configError || !configData?.formConfigByName?.config) {
+    return (
+      <Box sx={{ maxWidth: '600px', mx: 'auto', py: 4 }}>
+        <Sheet sx={{ p: 4, borderRadius: 'lg', bgcolor: 'background.surface' }}>
+          <Typography level="h2" color="danger">
+            {configError ? `Error loading form configuration: ${configError.message}` : 'Form configuration not found'}
+          </Typography>
+          <Button onClick={() => navigate('/')} sx={{ mt: 2 }}>
+            Return to Home
+          </Button>
+        </Sheet>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ maxWidth: '600px', mx: 'auto', py: 4 }}>
@@ -220,6 +258,15 @@ const CreateUser = () => {
               placeholder="Enter matricule"
             />
             {errors.matricule && <FormHelperText>{errors.matricule}</FormHelperText>}
+          </FormControl>
+          <FormControl sx={{ mb: 2 }} error={!!errors.NIR}>
+            <FormLabel>NIR</FormLabel>
+            <Input
+              value={formData.NIR}
+              onChange={handleChange('NIR')}
+              placeholder="Enter NIR"
+            />
+            {errors.NIR && <FormHelperText>{errors.NIR}</FormHelperText>}
           </FormControl>
           <FormControl sx={{ mb: 2 }} error={!!errors.firstName}>
             <FormLabel>First Name</FormLabel>
@@ -275,6 +322,15 @@ const CreateUser = () => {
               type="date"
             />
             {errors.birthDate && <FormHelperText>{errors.birthDate}</FormHelperText>}
+          </FormControl>
+          <FormControl sx={{ mb: 2 }} error={!!errors.endDate}>
+            <FormLabel>End Date</FormLabel>
+            <Input
+              value={formData.endDate}
+              onChange={handleChange('endDate')}
+              type="date"
+            />
+            {errors.endDate && <FormHelperText>{errors.endDate}</FormHelperText>}
           </FormControl>
           <FormControl sx={{ mb: 2 }} error={!!errors.gender}>
             <FormLabel>Gender</FormLabel>

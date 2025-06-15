@@ -21,3 +21,39 @@ export const GET_USERS = gql`
     }
   }
 `;
+
+export const GET_FORM_CONFIG = gql`
+  query GetFormConfig($formName: String!) {
+    formConfigByName(formName: $formName) {
+      id
+      formName
+      description
+      config
+    }
+  }
+`;
+
+export const GET_FORM_CONFIGS = gql`
+  query GetFormConfigs {
+    formConfigs {
+      id
+      formName
+      description
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const GET_FORM_CONFIG_BY_ID = gql`
+  query GetFormConfigById($id: ID!) {
+    formConfig(id: $id) {
+      id
+      formName
+      description
+      config
+      createdAt
+      updatedAt
+    }
+  }
+`;

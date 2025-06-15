@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
   matricule: { type: String },
+  NIR: { type: String },
   firstName: { type: String },
   lastName: { type: String },
   username: { type: String },

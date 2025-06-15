@@ -56,11 +56,23 @@ export const UPDATE_USER = gql`
   }
 `;
 
-// Mutation pour supprimer un utilisateur (le brouillon)
 export const DELETE_USER = gql`
   mutation DeleteUser($id: ID!) {
     deleteUser(id: $id) {
       id
+    }
+  }
+`;
+
+export const UPDATE_FORM_CONFIG = gql`
+  mutation UpdateFormConfig($id: ID!, $input: UpdateFormConfigInput!) {
+    updateFormConfig(id: $id, input: $input) {
+      id
+      formName
+      description
+      config
+      createdAt
+      updatedAt
     }
   }
 `;

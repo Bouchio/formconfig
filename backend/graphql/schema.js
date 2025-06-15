@@ -1,7 +1,11 @@
 const typeDefs = `#graphql
+
+  scalar JSON
+
   type User {
     id: ID!
     matricule: String
+    NIR: String
     firstName: String
     lastName: String
     username: String
@@ -17,9 +21,21 @@ const typeDefs = `#graphql
     updatedAt: String
   }
 
+  type FormConfig {
+    id: ID!
+    formName: String!
+    description: String!
+    config: JSON!
+    createdAt: String
+    updatedAt: String
+  }
+
   type Query {
     users: [User]
     user(id: ID!): User
+    formConfigs: [FormConfig]
+    formConfig(id: ID!): FormConfig
+    formConfigByName(formName: String!): FormConfig
   }
   
   type Mutation {
@@ -27,6 +43,9 @@ const typeDefs = `#graphql
     updateUser(id: ID!, input: UpdateUserInput!): User
     deleteUser(id: ID!): User
     createDraftUser: User!
+    createFormConfig(input: CreateFormConfigInput!): FormConfig
+    updateFormConfig(id: ID!, input: UpdateFormConfigInput!): FormConfig
+    deleteFormConfig(id: ID!): FormConfig
   }
 
   input CreateUserInput {
@@ -57,6 +76,18 @@ const typeDefs = `#graphql
     phone: String
     hobbies: [String]
     isActive: Boolean
+  }
+
+  input CreateFormConfigInput {
+    formName: String!
+    description: String!
+    config: JSON!
+  }
+
+  input UpdateFormConfigInput {
+    formName: String
+    description: String
+    config: JSON
   }
 `;
 

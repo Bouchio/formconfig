@@ -7,30 +7,21 @@ import { expressMiddleware } from "@apollo/server/express4";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
 import typeDefs from "./graphql/schema.js";
 import resolvers from "./graphql/resolvers.js";
+import mongoose from "mongoose";
 
 dotenv.config();
-
-// Sélectionner le client Prisma en fonction de DATABASE_PROVIDER
-const provider = process.env.DATABASE_PROVIDER || "mongodb";
-let prisma;
-
-if (provider === "postgresql") {
-  const { PrismaClient } = await import("./generated/postgresqlClient/index.js");
-  prisma = new PrismaClient();
-} else {
-  const { PrismaClient } = await import("./generated/mongoClient/index.js");
-  prisma = new PrismaClient();
-}
 
 async function startServer() {
   const app = express();
   const httpServer = http.createServer(app);
 
-  // Test de connexion à la base de données
+  // Connexion à MongoDB avec Mongoose
   try {
-    console.log(`✅ Prisma connected to ${provider.toUpperCase()}`);
+    await mongoose.connect(process.env.DATABASE_URL); // Suppression des options obsolètes
+    console.log("✅ Connected to MongoDB with Mongoose");
   } catch (error) {
-    console.error(`❌ Failed to connect to ${provider.toUpperCase()}:`, error);
+    console.error("❌ Failed to connect to MongoDB:", error);
+    process.exit(1);
   }
 
   const server = new ApolloServer({
@@ -45,8 +36,8 @@ async function startServer() {
     cors(),
     express.json(),
     expressMiddleware(server, {
-      context: async ({ req }) => {
-        return { prisma };
+      context: async () => {
+        return {};
       },
     })
   );

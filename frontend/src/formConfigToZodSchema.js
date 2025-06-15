@@ -8,11 +8,41 @@ const formatErrorMessage = (message, params = {}) => {
   for (const key in params) {
     if (key === 'fields' && Array.isArray(params[key])) {
       formatted = formatted.replace(new RegExp(`\\{${key}\\}`, 'g'), params[key].join(', '));
+    } else if (key === 'minDate' || key === 'maxDate') {
+      if (params['isFieldReference'] && params['days'] !== undefined && params['days'] !== 0) {
+        formatted = formatted.replace(
+          new RegExp(`\\{${key}\\}`, 'g'),
+          `${params['name']} ${params['sign']} ${params['days']} jours`
+        );
+      } else if (params['isFieldReference']) {
+        formatted = formatted.replace(new RegExp(`\\{${key}\\}`, 'g'), params['name']);
+      } else {
+        formatted = formatted.replace(new RegExp(`\\{${key}\\}`, 'g'), params[key]);
+      }
     } else {
       formatted = formatted.replace(new RegExp(`\\{${key}\\}`, 'g'), params[key]);
     }
   }
   return formatted;
+};
+
+// Fonction pour valider la clé de contrôle mod97
+const validateMod97 = (value, base, position) => {
+  console.log('validateMod97 called with:', { value, base, position });
+  const baseValue = value.slice(base[0], base[1]);
+  const keyValue = value.slice(position[0], position[1]);
+  console.log('baseValue:', baseValue, 'keyValue:', keyValue);
+  if (!/^\d+$/.test(baseValue) || !/^\d+$/.test(keyValue)) {
+    console.log('Validation failed: baseValue or keyValue contains non-digits');
+    return false;
+  }
+  const number = parseInt(baseValue, 10);
+  const expectedKey = 97 - (number % 97);
+  const actualKey = parseInt(keyValue, 10);
+  console.log('number:', number, 'expectedKey:', expectedKey, 'actualKey:', actualKey);
+  const isValid = expectedKey === actualKey;
+  console.log('mod97 validation result:', isValid);
+  return isValid;
 };
 
 export const formConfigToZodSchema = (config) => {
@@ -30,10 +60,8 @@ export const formConfigToZodSchema = (config) => {
     "lessThan": "Doit être inférieur à {value}.",
     "moreThan": "Doit être supérieur à {value}.",
     "integer": "Doit être un nombre entier.",
-    "minDate": "La date doit être égale ou postérieure au {minDate}.",
-    "maxDate": "La date doit être égale ou antérieure au {maxDate}.",
-    "maxToday": "La date ne peut pas être dans le futur.",
-    "minToday": "La date ne peut pas être dans le passé.",
+    "minDate": "La date doit être postérieure ou égale à {minDate}.",
+    "maxDate": "La date doit être antérieure ou égale à {maxDate}.",
     "minArray": "Minimum {min} éléments requis.",
     "maxArray": "Maximum {max} éléments autorisés.",
     "lengthArray": "Doit contenir exactement {len} éléments.",
@@ -48,6 +76,14 @@ export const formConfigToZodSchema = (config) => {
 
   const interFieldComparisonRules = [];
   const interFieldNotEqualsRules = [];
+  const interFieldDateRules = [];
+
+  // Vérifier les champs existants pour valider les références
+  const fieldNames = config.fields.map(field => field.name);
+  const dateFieldNames = config.fields.filter(field => field.type === 'date').map(field => field.name);
+
+  // Regex pour parser les expressions comme "$fieldName + 90" ou "today - 26"
+  const dateExpressionRegex = /^(\$?\w+)\s*([+-])\s*(\d+)$/;
 
   config.fields.forEach((fieldConfig) => {
     const { name, type, validations = {}, generate } = fieldConfig;
@@ -90,7 +126,7 @@ export const formConfigToZodSchema = (config) => {
           currentFieldSchema = currentFieldSchema.length(validations.length, { message: formatErrorMessage(fieldErrorMessages.length, { len: validations.length }) });
         }
         if (validations.pattern) {
-          currentFieldSchema = currentFieldSchema.regex(new RegExp(validations.pattern), { message: fieldErrorMessages.pattern });
+          currentFieldSchema = currentFieldSchema.regex(new RegExp(validations.pattern), { message: formatErrorMessage(fieldErrorMessages.pattern) });
         }
         if (validations.format) {
           switch (validations.format) {
@@ -120,6 +156,52 @@ export const formConfigToZodSchema = (config) => {
         }
         if (validations.notEnum) {
           currentFieldSchema = currentFieldSchema.refine(val => !validations.notEnum.includes(val), { message: formatErrorMessage(fieldErrorMessages.notEnum, { values: validations.notEnum.join(', ') }) });
+        }
+        // Ajout de la validation pour segments
+        if (validations.segments && Array.isArray(validations.segments)) {
+          validations.segments.forEach((segment, index) => {
+            if (segment.pattern && segment.position && Array.isArray(segment.position) && segment.position.length === 2) {
+              currentFieldSchema = currentFieldSchema.refine(
+                (val) => {
+                  console.log(`Validating segment ${index} for field ${name}:`, { val, position: segment.position, pattern: segment.pattern });
+                  if (typeof val !== 'string') {
+                    console.log('Validation failed: value is not a string');
+                    return false;
+                  }
+                  const segmentValue = val.slice(segment.position[0], segment.position[1]);
+                  const isValid = new RegExp(segment.pattern).test(segmentValue);
+                  console.log(`Segment ${index} value: ${segmentValue}, isValid: ${isValid}`);
+                  return isValid;
+                },
+                {
+                  message: formatErrorMessage(
+                    validations.errorMessage?.segments || fieldErrorMessages.pattern
+                  ),
+                  path: [name]
+                }
+              );
+            }
+            if (segment.check && segment.check.type === 'mod97' && segment.check.base && Array.isArray(segment.check.base) && segment.check.base.length === 2) {
+              currentFieldSchema = currentFieldSchema.refine(
+                (val) => {
+                  console.log(`Validating mod97 check for field ${name}:`, { val, base: segment.check.base, position: segment.position });
+                  if (typeof val !== 'string') {
+                    console.log('Validation failed: value is not a string');
+                    return false;
+                  }
+                  const isValid = validateMod97(val, segment.check.base, segment.position);
+                  console.log(`mod97 check result: ${isValid}`);
+                  return isValid;
+                },
+                {
+                  message: formatErrorMessage(
+                    validations.errorMessage?.segments || fieldErrorMessages.pattern
+                  ),
+                  path: [name]
+                }
+              );
+            }
+          });
         }
       }
 
@@ -158,48 +240,136 @@ export const formConfigToZodSchema = (config) => {
       if (type === 'date') {
         currentFieldSchema = currentFieldSchema.regex(/^\d{4}-\d{2}-\d{2}$/, { message: fieldErrorMessages.pattern });
         if (validations.minDate) {
-          currentFieldSchema = currentFieldSchema.refine(
-            (val) => {
+          const minDateValue = validations.minDate;
+          const match = minDateValue.match(dateExpressionRegex);
+          if (match) {
+            const [, ref, sign, daysStr] = match;
+            const days = parseInt(daysStr, 10);
+            if (ref === 'today' || (ref.startsWith('$') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
+              const compareFieldName = ref === 'today' ? 'today' : ref.substring(1);
+              interFieldDateRules.push({
+                fieldName: name,
+                compareField: compareFieldName,
+                type: 'minDate',
+                days: sign === '+' ? days : -days,
+                sign: sign,
+                errorMessage: formatErrorMessage(fieldErrorMessages.minDate, {
+                  minDate: `${compareFieldName} ${sign} ${days} jours`,
+                  name: compareFieldName,
+                  days,
+                  sign,
+                  isFieldReference: true
+                })
+              });
+            } else {
+              console.warn(`Validation 'minDate' for field '${name}' references invalid or non-date field '${ref}'.`);
+            }
+          } else if (typeof minDateValue === 'string' && minDateValue.startsWith('$')) {
+            const compareFieldName = minDateValue.substring(1);
+            if (fieldNames.includes(compareFieldName) && dateFieldNames.includes(compareFieldName)) {
+              interFieldDateRules.push({
+                fieldName: name,
+                compareField: compareFieldName,
+                type: 'minDate',
+                days: 0,
+                sign: '+',
+                errorMessage: formatErrorMessage(fieldErrorMessages.minDate, {
+                  minDate: compareFieldName,
+                  name: compareFieldName,
+                  isFieldReference: true
+                })
+              });
+            } else {
+              console.warn(`Validation 'minDate' for field '${name}' references invalid or non-date field '${compareFieldName}'.`);
+            }
+          } else if (minDateValue === 'today') {
+            interFieldDateRules.push({
+              fieldName: name,
+              compareField: 'today',
+              type: 'minDate',
+              days: 0,
+              sign: '+',
+              errorMessage: formatErrorMessage(fieldErrorMessages.minDate, {
+                minDate: 'today',
+                name: 'today',
+                isFieldReference: true
+              })
+            });
+          } else {
+            currentFieldSchema = currentFieldSchema.refine((val) => {
               const date = new Date(val);
-              const minDate = new Date(validations.minDate);
+              const minDate = new Date(minDateValue);
               return !isNaN(date.getTime()) && !isNaN(minDate.getTime()) && date >= minDate;
-            },
-            { message: formatErrorMessage(fieldErrorMessages.minDate, { minDate: validations.minDate }) }
-          );
+            }, {
+              message: formatErrorMessage(fieldErrorMessages.minDate, { minDate: minDateValue })
+            });
+          }
         }
         if (validations.maxDate) {
-          currentFieldSchema = currentFieldSchema.refine(
-            (val) => {
+          const maxDateValue = validations.maxDate;
+          const match = maxDateValue.match(dateExpressionRegex);
+          if (match) {
+            const [, ref, sign, daysStr] = match;
+            const days = parseInt(daysStr, 10);
+            if (ref === 'today' || (ref.startsWith('$') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
+              const compareFieldName = ref === 'today' ? 'today' : ref.substring(1);
+              interFieldDateRules.push({
+                fieldName: name,
+                compareField: compareFieldName,
+                type: 'maxDate',
+                days: sign === '+' ? days : -days,
+                sign: sign,
+                errorMessage: formatErrorMessage(fieldErrorMessages.maxDate, {
+                  maxDate: `${compareFieldName} ${sign} ${days} jours`,
+                  name: compareFieldName,
+                  days,
+                  sign,
+                  isFieldReference: true,
+                })
+              });
+            } else {
+              console.warn(`Validation 'maxDate}' for field '${name}' references invalid or non-date field '${ref}'.`);
+            }
+          } else if (typeof maxDateValue === 'string' && maxDateValue.startsWith('$')) {
+            const compareFieldName = maxDateValue.substring(1);
+            if (fieldNames.includes(compareFieldName) && dateFieldNames.includes(compareFieldName)) {
+              interFieldDateRules.push({
+                fieldName: name,
+                compareField: compareFieldName,
+                type: 'maxDate',
+                days: 0,
+                sign: '+',
+                errorMessage: formatErrorMessage(fieldErrorMessages.maxDate, {
+                  maxDate: compareFieldName,
+                  name: compareFieldName,
+                  isFieldReference: true
+                })
+              });
+            } else {
+              console.warn(`Validation 'maxDate' for field '${name}' references invalid or non-date field '${compareFieldName}'.`);
+            }
+          } else if (maxDateValue === 'today') {
+            interFieldDateRules.push({
+              fieldName: name,
+              compareField: 'today',
+              type: 'maxDate',
+              days: 0,
+              sign: '+',
+              errorMessage: formatErrorMessage(fieldErrorMessages.maxDate, {
+                maxDate: 'today',
+                name: 'today',
+                isFieldReference: true
+              })
+            });
+          } else {
+            currentFieldSchema = currentFieldSchema.refine((val) => {
               const date = new Date(val);
-              const maxDate = new Date(validations.maxDate);
+              const maxDate = new Date(maxDateValue);
               return !isNaN(date.getTime()) && !isNaN(maxDate.getTime()) && date <= maxDate;
-            },
-            { message: formatErrorMessage(fieldErrorMessages.maxDate, { maxDate: validations.maxDate }) }
-          );
-        }
-        if (validations.maxToday) {
-          currentFieldSchema = currentFieldSchema.refine(
-            (val) => {
-              const date = new Date(val);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              date.setHours(0, 0, 0, 0);
-              return !isNaN(date.getTime()) && date <= today;
-            },
-            { message: fieldErrorMessages.maxToday }
-          );
-        }
-        if (validations.minToday) {
-          currentFieldSchema = currentFieldSchema.refine(
-            (val) => {
-              const date = new Date(val);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              date.setHours(0, 0, 0, 0);
-              return !isNaN(date.getTime()) && date >= today;
-            },
-            { message: fieldErrorMessages.minToday }
-          );
+            }, {
+              message: formatErrorMessage(fieldErrorMessages.maxDate, { maxDate: maxDateValue })
+            });
+          }
         }
       }
 
@@ -300,6 +470,48 @@ export const formConfigToZodSchema = (config) => {
         return true;
       }
       return rule.compareFields.every(compareField => data[compareField] !== fieldToValidate);
+    }, {
+      message: rule.errorMessage,
+      path: [rule.fieldName]
+    });
+  });
+
+  interFieldDateRules.forEach((rule) => {
+    finalSchema = finalSchema.refine((data) => {
+      const fieldToValidate = data[rule.fieldName];
+      if (fieldToValidate === null || fieldToValidate === undefined) {
+        return true;
+      }
+      const dateToValidate = new Date(fieldToValidate);
+      dateToValidate.setHours(0, 0, 0, 0); // Normaliser à minuit
+      if (isNaN(dateToValidate.getTime())) {
+        return true; // Ignorer si la date est invalide
+      }
+      let compareDate;
+      if (rule.compareField === 'today') {
+        compareDate = new Date();
+        compareDate.setHours(0, 0, 0, 0); // Normaliser aujourd’hui à minuit
+      } else {
+        const compareFieldValue = data[rule.compareField];
+        if (compareFieldValue === null || compareFieldValue === undefined) {
+          return true;
+        }
+        compareDate = new Date(compareFieldValue);
+        compareDate.setHours(0, 0, 0, 0); // Normaliser la date comparée à minuit
+        if (isNaN(compareDate.getTime())) {
+          return true; // Ignorer si la date comparée est invalide
+        }
+      }
+      // Appliquer l’ajustement des jours
+      if (rule.days !== 0) {
+        compareDate.setDate(compareDate.getDate() + rule.days);
+      }
+      if (rule.type === 'minDate') {
+        return dateToValidate >= compareDate;
+      } else if (rule.type === 'maxDate') {
+        return dateToValidate <= compareDate;
+      }
+      return true;
     }, {
       message: rule.errorMessage,
       path: [rule.fieldName]
