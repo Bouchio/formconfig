@@ -9,6 +9,7 @@ import { toast } from 'react-hot-toast';
 import { formConfigToZodSchema } from '../formConfigToZodSchema';
 import { CREATE_DRAFT_USER, UPDATE_USER, DELETE_USER } from '../graphql/mutations';
 import { GET_FORM_CONFIG } from '../graphql/queries';
+import { GET_USERS } from '../graphql/queries';
 
 const CreateUser = () => {
   const navigate = useNavigate();
@@ -22,17 +23,16 @@ const CreateUser = () => {
     email: '',
     age: '',
     birthDate: '',
-    endDate: '',
     gender: '',
     address: '',
     phone: '',
     isActive: true,
     hobbies: [],
+    role: 'Utilisateur',
   });
   const [errors, setErrors] = useState({});
   const [hobbyInput, setHobbyInput] = useState('');
 
-  // Récupérer la configuration depuis la BDD
   const { loading: configLoading, error: configError, data: configData } = useQuery(GET_FORM_CONFIG, {
     variables: { formName: 'createUser' },
   });
@@ -42,8 +42,7 @@ const CreateUser = () => {
       const draftId = data.createDraftUser.id;
       setFormData((prevData) => ({ ...prevData, id: draftId }));
       localStorage.setItem('draftUserId', draftId);
-      // console.log('Draft user created with ID:', draftId);
-      // console.log('localStorage draftUserId:', localStorage.getItem('draftUserId'));
+      console.log('Draft user created with ID:', draftId);
     },
     onError: (error) => {
       toast.error(`Error creating draft user: ${error.message}`);
@@ -56,12 +55,13 @@ const CreateUser = () => {
       localStorage.removeItem('draftUserId');
       toast.success('User created successfully');
       navigate('/');
-      // console.log('Draft submitted, localStorage cleared:', localStorage.getItem('draftUserId'));
+      console.log('User created successfully');
     },
     onError: (error) => {
       toast.error(`Error updating user: ${error.message}`);
       console.error('Update user error:', error);
     },
+    refetchQueries: [{ query: GET_USERS }],
   });
 
   const [deleteUser] = useMutation(DELETE_USER, {
@@ -73,16 +73,15 @@ const CreateUser = () => {
 
   let hasCreated = false;
 
-  // Gérer la création ou la réutilisation du brouillon au chargement
   useEffect(() => {
     const initializeDraft = async () => {
       const savedDraftId = localStorage.getItem('draftUserId');
       if (savedDraftId) {
-        // console.log('Reusing existing draft ID:', savedDraftId);
+        console.log('Reusing existing draft ID:', savedDraftId);
         setFormData((prevData) => ({ ...prevData, id: savedDraftId }));
       } else if (!hasCreated) {
         hasCreated = true;
-        // console.log('Creating new draft user');
+        console.log('Creating new draft user');
         try {
           await createDraftUser();
         } catch (error) {
@@ -93,26 +92,23 @@ const CreateUser = () => {
 
     initializeDraft();
 
-    // Gérer les rechargements
     const handleBeforeUnload = (event) => {
       localStorage.setItem('isReloading', 'true');
-      // console.log('Before unload, isReloading set to true');
+      console.log('Before unload, isReloading set to true');
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Nettoyage asynchrone lors du démontage
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       const isReloading = localStorage.getItem('isReloading') === 'true';
       const draftId = localStorage.getItem('draftUserId');
       if (draftId && !isReloading) {
-        // console.log('Cleaning up draft ID:', draftId);
+        console.log('Cleaning up draft ID:', draftId);
         deleteUser({ variables: { id: draftId } })
           .then(() => {
             localStorage.removeItem('draftUserId');
-            // console.log('Draft deleted successfully:', draftId);
-            // console.log('localStorage after cleanup:', localStorage.getItem('draftUserId'));
+            console.log('Draft deleted successfully:', draftId);
           })
           .catch((error) => {
             console.error('Failed to delete draft during cleanup:', error);
@@ -120,20 +116,68 @@ const CreateUser = () => {
       }
       if (isReloading) {
         localStorage.removeItem('isReloading');
-        // console.log('Reload detected, isReloading cleared');
+        console.log('Reload detected, isReloading cleared');
       }
     };
   }, []);
 
-  // Générer le schéma de validation à partir de la config BDD
   const validationSchema = useMemo(() => {
     if (!configData?.formConfigByName?.config) return null;
     return formConfigToZodSchema(configData.formConfigByName.config);
   }, [configData]);
 
+  // Générer la valeur d’un champ basé sur sa config generate
+  const generateFieldValue = (fieldConfig, formData) => {
+    if (!fieldConfig.generate || !Array.isArray(fieldConfig.generate)) {
+      return '';
+    }
+    console.log(`Generating value for field ${fieldConfig.name}:`, fieldConfig.generate);
+    return fieldConfig.generate.reduce((result, part) => {
+      if (typeof part === 'string') {
+        console.log(`Adding static part: ${part}`);
+        return result + part;
+      }
+      if (typeof part === 'object' && part.field && part.field.startsWith('#')) {
+        const fieldName = part.field.substring(1);
+        let value = formData[fieldName] || '';
+        console.log(`Adding dynamic part from field ${fieldName}: ${value}`);
+        if (part.slice && Array.isArray(part.slice) && part.slice.length === 2) {
+          const [start, end] = part.slice;
+          if (typeof value === 'string' && start >= 0 && end >= start) {
+            value = value.slice(start, end);
+            console.log(`Sliced value: ${value}`);
+          } else {
+            console.log(`Invalid slice for field ${fieldName}:`, { start, end, value });
+          }
+        }
+        return result + value;
+      }
+      console.warn(`Invalid part in generate config for field ${fieldConfig.name}:`, part);
+      return result;
+    }, '');
+  };
+
+  // Mettre à jour les champs générés à chaque changement
+  const updateGeneratedFields = (newFormData) => {
+    if (!configData?.formConfigByName?.config?.fields) return newFormData;
+    let updatedFormData = { ...newFormData };
+    configData.formConfigByName.config.fields.forEach((fieldConfig) => {
+      if (fieldConfig.generate) {
+        const generatedValue = generateFieldValue(fieldConfig, updatedFormData);
+        console.log(`Generated value for ${fieldConfig.name}: ${generatedValue}`);
+        updatedFormData[fieldConfig.name] = generatedValue;
+      }
+    });
+    return updatedFormData;
+  };
+
   const handleChange = (field) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-    setFormData((prevData) => ({ ...prevData, [field]: value }));
+    console.log(`Field ${field} changed to: ${value}`);
+    setFormData((prevData) => {
+      const newFormData = { ...prevData, [field]: value };
+      return updateGeneratedFields(newFormData);
+    });
   };
 
   const handleHobbyInputChange = (event) => {
@@ -142,19 +186,25 @@ const CreateUser = () => {
 
   const handleAddHobby = () => {
     if (hobbyInput.trim() && !formData.hobbies.includes(hobbyInput.trim())) {
-      setFormData((prevData) => ({
-        ...prevData,
-        hobbies: [...prevData.hobbies, hobbyInput.trim()],
-      }));
+      setFormData((prevData) => {
+        const newFormData = {
+          ...prevData,
+          hobbies: [...prevData.hobbies, hobbyInput.trim()],
+        };
+        return updateGeneratedFields(newFormData);
+      });
       setHobbyInput('');
     }
   };
 
   const handleRemoveHobby = (hobby) => {
-    setFormData((prevData) => ({
-      ...prevData,
-      hobbies: prevData.hobbies.filter((h) => h !== hobby),
-    }));
+    setFormData((prevData) => {
+      const newFormData = {
+        ...prevData,
+        hobbies: prevData.hobbies.filter((h) => h !== hobby),
+      };
+      return updateGeneratedFields(newFormData);
+    });
   };
 
   const transformFormDataForZod = (data) => {
@@ -171,6 +221,7 @@ const CreateUser = () => {
         transformedData[key] = null;
       }
     }
+    console.log('Transformed form data for Zod:', transformedData);
     return transformedData;
   };
 
@@ -181,7 +232,9 @@ const CreateUser = () => {
       return;
     }
     const dataToValidate = transformFormDataForZod(formData);
+    console.log('Validating form data:', dataToValidate);
     const result = validationSchema.safeParse(dataToValidate);
+    console.log('Validation result:', result);
     if (!result.success) {
       const newErrors = {};
       result.error.issues.forEach((issue) => {
@@ -189,29 +242,36 @@ const CreateUser = () => {
         newErrors[fieldName] = issue.message;
       });
       setErrors(newErrors);
-      toast.error('Please correct the errors in the form.');
+      // On supprime ce toast qui s'affiche au milieu
+      // toast.error('Please correct the errors in the form.');
+      console.log('Form errors:', newErrors);
       return;
     }
     setErrors({});
     const input = { ...result.data };
     delete input.id;
-    // console.log('Submitting data:', { id: formData.id, input });
+    console.log('Submitting data:', { id: formData.id, input });
     try {
-      await updateUser({ variables: { id: formData.id, input } });
+      await updateUser({
+        variables: {
+          id: formData.id,
+          input,
+        },
+      });
     } catch (error) {
-      // Error handled by onError
+      // L'erreur sera gérée par onError de la mutation
+      console.error('Submit error:', error);
     }
   };
 
   const handleCancel = async () => {
     const draftId = formData.id;
     if (draftId) {
-      // console.log('Canceling, deleting draft ID:', draftId);
+      console.log('Canceling, deleting draft ID:', draftId);
       try {
         await deleteUser({ variables: { id: draftId } });
         localStorage.removeItem('draftUserId');
-        // console.log('Draft deleted successfully on cancel:', draftId);
-        // console.log('localStorage after cancel:', localStorage.getItem('draftUserId'));
+        console.log('Draft deleted successfully on cancel:', draftId);
       } catch (error) {
         console.error('Failed to delete draft on cancel:', error);
       }
@@ -219,7 +279,6 @@ const CreateUser = () => {
     navigate('/');
   };
 
-  // Gérer le chargement et les erreurs de la configuration
   if (configLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -243,6 +302,11 @@ const CreateUser = () => {
     );
   }
 
+  // Identifier les champs générés pour rendre les inputs en lecture seule
+  const generatedFields = configData.formConfigByName.config.fields
+    .filter(field => field.generate)
+    .map(field => field.name);
+
   return (
     <Box sx={{ maxWidth: '600px', mx: 'auto', py: 4 }}>
       <Sheet sx={{ p: 4, borderRadius: 'lg', bgcolor: 'background.surface' }}>
@@ -255,7 +319,9 @@ const CreateUser = () => {
             <Input
               value={formData.matricule}
               onChange={handleChange('matricule')}
-              placeholder="Enter matricule"
+              placeholder="Matricule généré automatiquement"
+              disabled={generatedFields.includes('matricule')}
+              readOnly={generatedFields.includes('matricule')}
             />
             {errors.matricule && <FormHelperText>{errors.matricule}</FormHelperText>}
           </FormControl>
@@ -323,15 +389,6 @@ const CreateUser = () => {
             />
             {errors.birthDate && <FormHelperText>{errors.birthDate}</FormHelperText>}
           </FormControl>
-          <FormControl sx={{ mb: 2 }} error={!!errors.endDate}>
-            <FormLabel>End Date</FormLabel>
-            <Input
-              value={formData.endDate}
-              onChange={handleChange('endDate')}
-              type="date"
-            />
-            {errors.endDate && <FormHelperText>{errors.endDate}</FormHelperText>}
-          </FormControl>
           <FormControl sx={{ mb: 2 }} error={!!errors.gender}>
             <FormLabel>Gender</FormLabel>
             <Select
@@ -390,13 +447,19 @@ const CreateUser = () => {
             </Box>
             {errors.hobbies && <FormHelperText>{errors.hobbies}</FormHelperText>}
           </FormControl>
-          <FormControl sx={{ mb: 2 }}>
-            <FormLabel>Active</FormLabel>
-            <Checkbox
-              checked={formData.isActive}
-              onChange={handleChange('isActive')}
-              label="Is Active"
-            />
+          <FormControl sx={{ mb: 2 }} error={!!errors.role}>
+            <FormLabel>Role</FormLabel>
+            <Select
+              value={formData.role}
+              onChange={(e, value) => setFormData({ ...formData, role: value })}
+              placeholder="Select role"
+            >
+              <Option value="Utilisateur">Utilisateur</Option>
+              <Option value="RH">RH</Option>
+              <Option value="Directeur">Directeur</Option>
+              <Option value="Admin">Admin</Option>
+            </Select>
+            {errors.role && <FormHelperText>{errors.role}</FormHelperText>}
           </FormControl>
           <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
             <Button

@@ -48,7 +48,7 @@ const UserList = () => {
 
   const handleConfirmDelete = async () => {
     try {
-      await deleteUser({ variables: { id: userToDelete._id } });
+      await deleteUser({ variables: { id: userToDelete.id } });
       setOpenDeleteModal(false);
       setUserToDelete(null);
       if (filteredUsers.length % usersPerPage === 1 && currentPage > 1) {
@@ -77,6 +77,7 @@ const UserList = () => {
     data?.users?.filter((user) =>
       [
         user.matricule,
+        user.NIR,
         user.firstName,
         user.lastName,
         user.username,
@@ -143,7 +144,7 @@ const UserList = () => {
             />
             <Button
               component={Link}
-              to="/create-user"
+              to="/users/create"
               variant="solid"
               color="primary"
               startDecorator={<AddIcon />}
@@ -164,20 +165,21 @@ const UserList = () => {
         >
           <thead>
             <tr>
-              <th style={{ width: "12%" }}>Matricule</th>
-              <th style={{ width: "15%" }}>First Name</th>
-              <th style={{ width: "15%" }}>Last Name</th>
-              <th style={{ width: "12%" }}>Username</th>
-              <th style={{ width: "20%" }}>Email</th>
-              <th style={{ width: "8%" }}>Age</th>
-              <th style={{ width: "10%" }}>Birth Date</th>
-              <th style={{ width: "8%" }}>Status</th>
-              <th style={{ width: "10%", textAlign: "center" }}>Actions</th>
+              <th key="matricule" style={{ width: "10%" }}>Matricule</th>
+              <th key="firstName" style={{ width: "12%" }}>First Name</th>
+              <th key="lastName" style={{ width: "12%" }}>Last Name</th>
+              <th key="username" style={{ width: "10%" }}>Username</th>
+              <th key="email" style={{ width: "15%" }}>Email</th>
+              <th key="age" style={{ width: "6%" }}>Age</th>
+              <th key="birthDate" style={{ width: "10%" }}>Birth Date</th>
+              <th key="role" style={{ width: "10%" }}>Role</th>
+              <th key="status" style={{ width: "7%" }}>Status</th>
+              <th key="actions" style={{ width: "10%", textAlign: "center" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {currentUsers.map((user) => (
-              <tr key={user._id}>
+              <tr key={user.id}>
                 <td>{user.matricule || "N/A"}</td>
                 <td>{user.firstName || "N/A"}</td>
                 <td>{user.lastName || "N/A"}</td>
@@ -191,16 +193,30 @@ const UserList = () => {
                 </td>
                 <td>
                   <Chip
-                    color={user.isActive ? "success" : "warning"}
+                    color={
+                      user.role === 'Admin' ? 'danger' :
+                      user.role === 'Directeur' ? 'warning' :
+                      user.role === 'RH' ? 'info' : 'neutral'
+                    }
                     variant="soft"
+                    size="sm"
                   >
-                    {user.isActive ? "Active" : "Draft"}
+                    {user.role || 'Utilisateur'}
+                  </Chip>
+                </td>
+                <td>
+                  <Chip
+                    color={user.isActive ? "success" : "danger"}
+                    variant="soft"
+                    size="sm"
+                  >
+                    {user.isActive ? "Actif" : "Inactif"}
                   </Chip>
                 </td>
                 <td style={{ textAlign: "center" }}>
                   <Button
                     component={Link}
-                    to={`/edit-user/${user._id}`}
+                    to={`/users/${user.id}/edit`}
                     variant="outlined"
                     color="primary"
                     size="sm"

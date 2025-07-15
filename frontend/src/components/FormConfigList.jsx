@@ -16,7 +16,7 @@ const FormConfigList = () => {
 
   // Gérer le clic sur l'icône pour naviguer vers la page d'édition
   const handleView = (id) => {
-    navigate(`/form-config/${id}`);
+    navigate(`/form-configs/${id}/edit`);
   };
 
   // Gérer le clic sur le bouton "Return to Home"

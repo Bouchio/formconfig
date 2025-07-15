@@ -9,6 +9,7 @@ export const CREATE_USER = gql`
     createUser(input: $input) {
       id
       matricule
+      NIR
       firstName
       lastName
       username
@@ -20,6 +21,7 @@ export const CREATE_USER = gql`
       phone
       hobbies
       isActive
+      role
     }
   }
 `;
@@ -41,6 +43,7 @@ export const UPDATE_USER = gql`
     updateUser(id: $id, input: $input) {
       id
       matricule
+      NIR
       firstName
       lastName
       username
@@ -52,6 +55,7 @@ export const UPDATE_USER = gql`
       phone
       hobbies
       isActive
+      role
     }
   }
 `;
@@ -73,6 +77,33 @@ export const UPDATE_FORM_CONFIG = gql`
       config
       createdAt
       updatedAt
+    }
+  }
+`;
+
+// Mutations d'authentification
+export const LOGIN = gql`
+  mutation Login($input: LoginInput!) {
+    login(input: $input) {
+      success
+      message
+      user {
+        id
+        username
+        firstName
+        lastName
+        email
+        role
+      }
+    }
+  }
+`;
+
+export const LOGOUT = gql`
+  mutation Logout {
+    logout {
+      success
+      message
     }
   }
 `;

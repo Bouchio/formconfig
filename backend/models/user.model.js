@@ -1,20 +1,33 @@
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
-  matricule: { type: String },
-  NIR: { type: String },
-  firstName: { type: String },
-  lastName: { type: String },
-  username: { type: String },
-  email: { type: String },
-  age: { type: Number },
-  birthDate: { type: Date },
-  gender: { type: String },
-  address: { type: String },
-  phone: { type: String },
-  hobbies: { type: [String], required: false, default: [] },
-  isActive: { type: Boolean, default: true },
-}, { timestamps: true });
+  matricule: String,
+  NIR: String,
+  firstName: String,
+  lastName: String,
+  username: String,
+  email: String,
+  age: Number,
+  birthDate: String,
+  gender: String,
+  address: String,
+  phone: String,
+  hobbies: [String],
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  password: {
+    type: String,
+    default: "admin" // Mot de passe par défaut pour tous les utilisateurs
+  },
+  role: {
+    type: String,
+    enum: ['Admin', 'RH', 'Directeur', 'Utilisateur'],
+    default: 'Utilisateur'
+  }
+});
 
 const User = mongoose.model("User", userSchema);
+
 export default User;

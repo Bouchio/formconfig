@@ -5,6 +5,7 @@ export const GET_USERS = gql`
     users {
       id
       matricule
+      NIR
       firstName
       lastName
       username
@@ -16,6 +17,7 @@ export const GET_USERS = gql`
       phone
       hobbies
       isActive
+      role
       createdAt
       updatedAt
     }
@@ -54,6 +56,42 @@ export const GET_FORM_CONFIG_BY_ID = gql`
       config
       createdAt
       updatedAt
+    }
+  }
+`;
+
+export const GET_USER = gql`
+  query GetUser($id: ID!) {
+    user(id: $id) {
+      id
+      matricule
+      NIR
+      firstName
+      lastName
+      username
+      email
+      age
+      birthDate
+      gender
+      address
+      phone
+      hobbies
+      isActive
+      role
+    }
+  }
+`;
+
+// Query pour récupérer l'utilisateur connecté
+export const ME = gql`
+  query Me {
+    me {
+      id
+      username
+      firstName
+      lastName
+      email
+      role
     }
   }
 `;

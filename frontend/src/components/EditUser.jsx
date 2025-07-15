@@ -1,76 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, gql } from '@apollo/client';
+import { useQuery, useMutation } from '@apollo/client';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Sheet, Typography, Button, Input, Checkbox, FormControl, FormLabel, Box, CircularProgress } from '@mui/joy';
+import { 
+  Sheet, Typography, Button, Input, Checkbox, FormControl, FormLabel, 
+  Box, CircularProgress, Chip, ChipDelete, Select, Option
+} from '@mui/joy';
 import { toast } from 'react-hot-toast';
-
-// Define GraphQL query to fetch a user by ID
-const GET_USER = gql`
-  query GetUser($id: ID!) {
-    user(id: $id) {
-      _id
-      matricule
-      firstName
-      lastName
-      username
-      email
-      age
-      birthDate
-      gender
-      address
-      phone
-      isActive
-    }
-  }
-`;
-
-// Define GraphQL mutation to update a user
-const UPDATE_USER = gql`
-  mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
-    updateUser(id: $id, input: $input) {
-      _id
-      matricule
-      firstName
-      lastName
-      username
-      email
-      age
-      birthDate
-      gender
-      address
-      phone
-      isActive
-    }
-  }
-`;
-
-// Define GET_USERS for refetchQueries
-const GET_USERS = gql`
-  query GetUsers {
-    users {
-      _id
-      matricule
-      firstName
-      lastName
-      username
-      email
-      age
-      birthDate
-      gender
-      address
-      phone
-      isActive
-      createdAt
-      updatedAt
-    }
-  }
-`;
+import { GET_USERS, GET_USER } from '../graphql/queries';
+import { UPDATE_USER } from '../graphql/mutations';
 
 // Utility function to format timestamp to YYYY-MM-DD
 const formatDateForInput = (timestamp) => {
   if (!timestamp) return '';
-  const date = new Date(Number(timestamp));
-  return date.toISOString().split('T')[0];
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.warn('Invalid date format:', timestamp);
+    return '';
+  }
+};
+
+// Utility function to format any date string to YYYY-MM-DD for input
+const formatDateStringForInput = (dateString) => {
+  if (!dateString) return '';
+  try {
+    // Si c'est déjà au format YYYY-MM-DD, on le retourne tel quel
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      return dateString;
+    }
+    // Sinon on essaie de parser la date
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.warn('Invalid date format:', dateString);
+    return '';
+  }
 };
 
 const EditUser = () => {
@@ -80,6 +47,7 @@ const EditUser = () => {
 
   const [formData, setFormData] = useState({
     matricule: '',
+    NIR: '',
     firstName: '',
     lastName: '',
     username: '',
@@ -89,8 +57,11 @@ const EditUser = () => {
     gender: '',
     address: '',
     phone: '',
+    hobbies: [],
     isActive: true,
+    role: 'Utilisateur',
   });
+  const [hobbyInput, setHobbyInput] = useState('');
 
   const [updateUser, { loading: mutationLoading }] = useMutation(UPDATE_USER, {
     onCompleted: () => {
@@ -108,16 +79,19 @@ const EditUser = () => {
     if (data?.user) {
       setFormData({
         matricule: data.user.matricule || '',
+        NIR: data.user.NIR || '',
         firstName: data.user.firstName || '',
         lastName: data.user.lastName || '',
         username: data.user.username || '',
         email: data.user.email || '',
         age: data.user.age || '',
-        birthDate: formatDateForInput(data.user.birthDate),
+        birthDate: data.user.birthDate || '',
         gender: data.user.gender || '',
         address: data.user.address || '',
         phone: data.user.phone || '',
+        hobbies: data.user.hobbies || [],
         isActive: data.user.isActive,
+        role: data.user.role || 'Utilisateur',
       });
     }
   }, [data]);
@@ -131,6 +105,28 @@ const EditUser = () => {
     }));
   };
 
+  // Handle hobby input changes
+  const handleHobbyInputChange = (event) => {
+    setHobbyInput(event.target.value);
+  };
+
+  const handleAddHobby = () => {
+    if (hobbyInput.trim() && !formData.hobbies.includes(hobbyInput.trim())) {
+      setFormData((prevData) => ({
+        ...prevData,
+        hobbies: [...prevData.hobbies, hobbyInput.trim()],
+      }));
+      setHobbyInput('');
+    }
+  };
+
+  const handleRemoveHobby = (hobby) => {
+    setFormData((prevData) => ({
+      ...prevData,
+      hobbies: prevData.hobbies.filter((h) => h !== hobby),
+    }));
+  };
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -140,16 +136,19 @@ const EditUser = () => {
           id,
           input: {
             matricule: formData.matricule || null,
+            NIR: formData.NIR || null,
             firstName: formData.firstName || null,
             lastName: formData.lastName || null,
             username: formData.username || null,
             email: formData.email || null,
             age: formData.age ? parseInt(formData.age) : null,
-            birthDate: formData.birthDate ? new Date(formData.birthDate).getTime().toString() : null,
+            birthDate: formData.birthDate || null,
             gender: formData.gender || null,
             address: formData.address || null,
             phone: formData.phone || null,
+            hobbies: formData.hobbies,
             isActive: formData.isActive,
+            role: formData.role || null,
           },
         },
       });
@@ -194,6 +193,15 @@ const EditUser = () => {
               value={formData.matricule}
               onChange={handleChange}
               placeholder="Enter matricule"
+            />
+          </FormControl>
+          <FormControl sx={{ mb: 2 }}>
+            <FormLabel>NIR</FormLabel>
+            <Input
+              name="NIR"
+              value={formData.NIR}
+              onChange={handleChange}
+              placeholder="Enter NIR"
             />
           </FormControl>
           <FormControl sx={{ mb: 2 }}>
@@ -261,13 +269,44 @@ const EditUser = () => {
               placeholder="Enter phone number"
             />
           </FormControl>
-          <FormControl sx={{ mb: 3 }}>
-            <Checkbox
-              label="Active"
-              name="isActive"
-              checked={formData.isActive}
-              onChange={handleChange}
-            />
+          <FormControl sx={{ mb: 2 }}>
+            <FormLabel>Role</FormLabel>
+            <Select
+              name="role"
+              value={formData.role}
+              onChange={(e, value) => setFormData({ ...formData, role: value })}
+              placeholder="Select role"
+            >
+              <Option value="Utilisateur">Utilisateur</Option>
+              <Option value="RH">RH</Option>
+              <Option value="Directeur">Directeur</Option>
+              <Option value="Admin">Admin</Option>
+            </Select>
+          </FormControl>
+          <FormControl sx={{ mb: 2 }}>
+            <FormLabel>Hobbies</FormLabel>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <Input
+                value={hobbyInput}
+                onChange={handleHobbyInputChange}
+                placeholder="Add a hobby"
+              />
+              <Button onClick={handleAddHobby} variant="solid" color="primary" size="sm">
+                Add
+              </Button>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              {formData.hobbies.map((hobby, index) => (
+                <Chip
+                  key={index}
+                  variant="soft"
+                  color="primary"
+                  endDecorator={<ChipDelete onDelete={() => handleRemoveHobby(hobby)} />}
+                >
+                  {hobby}
+                </Chip>
+              ))}
+            </Box>
           </FormControl>
           <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
             <Button

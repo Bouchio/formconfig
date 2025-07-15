@@ -45,6 +45,46 @@ const validateMod97 = (value, base, position) => {
   return isValid;
 };
 
+// Valider la configuration de génération
+const validateGenerateConfig = (generate, fieldNames, fieldName) => {
+  console.log(`Validating generate config for field ${fieldName}:`, generate);
+  if (!Array.isArray(generate)) {
+    console.warn(`Invalid generate config for field '${fieldName}': must be an array.`);
+    return false;
+  }
+  return generate.every((part, index) => {
+    if (typeof part === 'string') {
+      console.log(`Part ${index} is static:`, part);
+      return true; // Chaîne statique, toujours valide
+    }
+    if (typeof part === 'object' && part.field) {
+      console.log(`Part ${index} is dynamic:`, part);
+      if (!part.field.startsWith('#')) {
+        console.warn(`Invalid field reference in generate config for field '${fieldName}', part ${index}: must start with '#'.`);
+        return false;
+      }
+      const refField = part.field.substring(1);
+      if (!fieldNames.includes(refField)) {
+        console.warn(`Invalid field reference in generate config for field '${fieldName}', part ${index}: '${refField}' does not exist.`);
+        return false;
+      }
+      if (part.slice) {
+        if (!Array.isArray(part.slice) || part.slice.length !== 2 || !Number.isInteger(part.slice[0]) || !Number.isInteger(part.slice[1])) {
+          console.warn(`Invalid slice in generate config for field '${fieldName}', part ${index}: must be an array of two integers.`);
+          return false;
+        }
+        if (part.slice[0] < 0 || part.slice[1] < part.slice[0]) {
+          console.warn(`Invalid slice indices in generate config for field '${fieldName}', part ${index}: indices must be non-negative and end >= start.`);
+          return false;
+        }
+      }
+      return true;
+    }
+    console.warn(`Invalid part in generate config for field '${fieldName}', part ${index}: must be a string or an object with 'field'.`);
+    return false;
+  });
+};
+
 export const formConfigToZodSchema = (config) => {
   const schemaFields = {};
   const globalMessages = {
@@ -71,7 +111,8 @@ export const formConfigToZodSchema = (config) => {
     "lowercase": "Doit être en minuscules.",
     "uppercase": "Doit être en majuscules.",
     "equals": "Doit être égal aux champs {fields}.",
-    "notEquals": "Ne peut pas être égal aux champs {fields}."
+    "notEquals": "Ne peut pas être égal aux champs {fields}.",
+    "generate": "La valeur générée est invalide."
   };
 
   const interFieldComparisonRules = [];
@@ -82,17 +123,49 @@ export const formConfigToZodSchema = (config) => {
   const fieldNames = config.fields.map(field => field.name);
   const dateFieldNames = config.fields.filter(field => field.type === 'date').map(field => field.name);
 
-  // Regex pour parser les expressions comme "$fieldName + 90" ou "today - 26"
-  const dateExpressionRegex = /^(\$?\w+)\s*([+-])\s*(\d+)$/;
+  // Regex pour parser les expressions comme "#fieldName + 90" ou "today - 26"
+  const dateExpressionRegex = /^(#?\w+)\s*([+-])\s*(\d+)$/;
 
   config.fields.forEach((fieldConfig) => {
     const { name, type, validations = {}, generate } = fieldConfig;
     const fieldErrorMessages = { ...globalMessages, ...(validations.errorMessage || {}) };
     let currentFieldSchema;
 
-    // Si le champ est généré automatiquement, on ignore les validations manuelles
+    // Si le champ est généré automatiquement
     if (generate) {
-      currentFieldSchema = z.string().optional(); // Les champs générés sont en lecture seule
+      console.log(`Processing generated field: ${name}`);
+      if (!validateGenerateConfig(generate, fieldNames, name)) {
+        console.warn(`Skipping invalid generate config for field '${name}'.`);
+        currentFieldSchema = z.string().optional();
+      } else {
+        // Initialiser comme string, pas optionnel par défaut
+        currentFieldSchema = z.string();
+        // Appliquer les validations supplémentaires
+        if (type === 'string') {
+          if (validations.minLength !== undefined) {
+            currentFieldSchema = currentFieldSchema.min(validations.minLength, { message: formatErrorMessage(fieldErrorMessages.minLength, { min: validations.minLength }) });
+          }
+          if (validations.maxLength !== undefined) {
+            currentFieldSchema = currentFieldSchema.max(validations.maxLength, { message: formatErrorMessage(fieldErrorMessages.maxLength, { max: validations.maxLength }) });
+          }
+          if (validations.length !== undefined) {
+            currentFieldSchema = currentFieldSchema.length(validations.length, { message: formatErrorMessage(fieldErrorMessages.length, { len: validations.length }) });
+          }
+          if (validations.pattern) {
+            currentFieldSchema = currentFieldSchema.regex(new RegExp(validations.pattern), { message: formatErrorMessage(fieldErrorMessages.pattern) });
+          }
+        }
+        if (validations.required) {
+          currentFieldSchema = currentFieldSchema
+            .nullable()
+            .refine(
+              val => val !== null && val !== '',
+              { message: fieldErrorMessages.required || globalMessages.required }
+            );
+        } else {
+          currentFieldSchema = currentFieldSchema.nullable().optional();
+        }
+      }
     } else {
       switch (type) {
         case 'string':
@@ -157,7 +230,6 @@ export const formConfigToZodSchema = (config) => {
         if (validations.notEnum) {
           currentFieldSchema = currentFieldSchema.refine(val => !validations.notEnum.includes(val), { message: formatErrorMessage(fieldErrorMessages.notEnum, { values: validations.notEnum.join(', ') }) });
         }
-        // Ajout de la validation pour segments
         if (validations.segments && Array.isArray(validations.segments)) {
           validations.segments.forEach((segment, index) => {
             if (segment.pattern && segment.position && Array.isArray(segment.position) && segment.position.length === 2) {
@@ -245,7 +317,7 @@ export const formConfigToZodSchema = (config) => {
           if (match) {
             const [, ref, sign, daysStr] = match;
             const days = parseInt(daysStr, 10);
-            if (ref === 'today' || (ref.startsWith('$') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
+            if (ref === 'today' || (ref.startsWith('#') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
               const compareFieldName = ref === 'today' ? 'today' : ref.substring(1);
               interFieldDateRules.push({
                 fieldName: name,
@@ -264,7 +336,7 @@ export const formConfigToZodSchema = (config) => {
             } else {
               console.warn(`Validation 'minDate' for field '${name}' references invalid or non-date field '${ref}'.`);
             }
-          } else if (typeof minDateValue === 'string' && minDateValue.startsWith('$')) {
+          } else if (typeof minDateValue === 'string' && minDateValue.startsWith('#')) {
             const compareFieldName = minDateValue.substring(1);
             if (fieldNames.includes(compareFieldName) && dateFieldNames.includes(compareFieldName)) {
               interFieldDateRules.push({
@@ -311,7 +383,7 @@ export const formConfigToZodSchema = (config) => {
           if (match) {
             const [, ref, sign, daysStr] = match;
             const days = parseInt(daysStr, 10);
-            if (ref === 'today' || (ref.startsWith('$') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
+            if (ref === 'today' || (ref.startsWith('#') && fieldNames.includes(ref.substring(1)) && dateFieldNames.includes(ref.substring(1)))) {
               const compareFieldName = ref === 'today' ? 'today' : ref.substring(1);
               interFieldDateRules.push({
                 fieldName: name,
@@ -328,9 +400,9 @@ export const formConfigToZodSchema = (config) => {
                 })
               });
             } else {
-              console.warn(`Validation 'maxDate}' for field '${name}' references invalid or non-date field '${ref}'.`);
+              console.warn(`Validation 'maxDate' for field '${name}' references invalid or non-date field '${ref}'.`);
             }
-          } else if (typeof maxDateValue === 'string' && maxDateValue.startsWith('$')) {
+          } else if (typeof maxDateValue === 'string' && maxDateValue.startsWith('#')) {
             const compareFieldName = maxDateValue.substring(1);
             if (fieldNames.includes(compareFieldName) && dateFieldNames.includes(compareFieldName)) {
               interFieldDateRules.push({
@@ -371,6 +443,20 @@ export const formConfigToZodSchema = (config) => {
             });
           }
         }
+        if (validations.maxToday) {
+          interFieldDateRules.push({
+            fieldName: name,
+            compareField: 'today',
+            type: 'maxDate',
+            days: 0,
+            sign: '+',
+            errorMessage: formatErrorMessage(fieldErrorMessages.maxDate, {
+              maxDate: 'today',
+              name: 'today',
+              isFieldReference: true
+            })
+          });
+        }
       }
 
       if (type === 'array') {
@@ -396,7 +482,7 @@ export const formConfigToZodSchema = (config) => {
           .nullable()
           .refine(
             val => val !== null,
-            { message: fieldErrorMessages.required || globalMessages.required || "Ce champ est obligatoire." }
+            { message: fieldErrorMessages.required || globalMessages.required }
           );
       } else {
         currentFieldSchema = currentFieldSchema.nullable().optional();
@@ -404,14 +490,14 @@ export const formConfigToZodSchema = (config) => {
 
       if (validations.equals !== undefined) {
         const equalsValue = validations.equals;
-        if (typeof equalsValue === 'string' && equalsValue.startsWith('$')) {
+        if (typeof equalsValue === 'string' && equalsValue.startsWith('#')) {
           const compareFieldName = equalsValue.substring(1);
           interFieldComparisonRules.push({
             fieldName: name,
             compareFields: [compareFieldName],
             errorMessage: formatErrorMessage(fieldErrorMessages.equals, { fields: [compareFieldName] })
           });
-        } else if (Array.isArray(equalsValue) && equalsValue.every(val => typeof val === 'string' && val.startsWith('$'))) {
+        } else if (Array.isArray(equalsValue) && equalsValue.every(val => typeof val === 'string' && val.startsWith('#'))) {
           const compareFieldNames = equalsValue.map(val => val.substring(1));
           interFieldComparisonRules.push({
             fieldName: name,
@@ -419,20 +505,20 @@ export const formConfigToZodSchema = (config) => {
             errorMessage: formatErrorMessage(fieldErrorMessages.equals, { fields: compareFieldNames })
           });
         } else {
-          console.warn(`Validation 'equals' for field '${name}' must be a string starting with '$' or an array of such strings.`);
+          console.warn(`Validation 'equals' for field '${name}' must be a string starting with '#' or an array of such strings.`);
         }
       }
 
       if (validations.notEquals !== undefined) {
         const notEqualsValue = validations.notEquals;
-        if (typeof notEqualsValue === 'string' && notEqualsValue.startsWith('$')) {
+        if (typeof notEqualsValue === 'string' && notEqualsValue.startsWith('#')) {
           const compareFieldName = notEqualsValue.substring(1);
           interFieldNotEqualsRules.push({
             fieldName: name,
             compareFields: [compareFieldName],
             errorMessage: formatErrorMessage(fieldErrorMessages.notEquals, { fields: [compareFieldName] })
           });
-        } else if (Array.isArray(notEqualsValue) && notEqualsValue.every(val => typeof val === 'string' && val.startsWith('$'))) {
+        } else if (Array.isArray(notEqualsValue) && notEqualsValue.every(val => typeof val === 'string' && val.startsWith('#'))) {
           const compareFieldNames = notEqualsValue.map(val => val.substring(1));
           interFieldNotEqualsRules.push({
             fieldName: name,
@@ -440,7 +526,7 @@ export const formConfigToZodSchema = (config) => {
             errorMessage: formatErrorMessage(fieldErrorMessages.notEquals, { fields: compareFieldNames })
           });
         } else {
-          console.warn(`Validation 'notEquals' for field '${name}' must be a string starting with '$' or an array of such strings.`);
+          console.warn(`Validation 'notEquals' for field '${name}' must be a string starting with '#' or an array of such strings.`);
         }
       }
     }
@@ -483,26 +569,25 @@ export const formConfigToZodSchema = (config) => {
         return true;
       }
       const dateToValidate = new Date(fieldToValidate);
-      dateToValidate.setHours(0, 0, 0, 0); // Normaliser à minuit
+      dateToValidate.setHours(0, 0, 0, 0);
       if (isNaN(dateToValidate.getTime())) {
-        return true; // Ignorer si la date est invalide
+        return true;
       }
       let compareDate;
       if (rule.compareField === 'today') {
         compareDate = new Date();
-        compareDate.setHours(0, 0, 0, 0); // Normaliser aujourd’hui à minuit
+        compareDate.setHours(0, 0, 0, 0);
       } else {
         const compareFieldValue = data[rule.compareField];
         if (compareFieldValue === null || compareFieldValue === undefined) {
           return true;
         }
         compareDate = new Date(compareFieldValue);
-        compareDate.setHours(0, 0, 0, 0); // Normaliser la date comparée à minuit
+        compareDate.setHours(0, 0, 0, 0);
         if (isNaN(compareDate.getTime())) {
-          return true; // Ignorer si la date comparée est invalide
+          return true;
         }
       }
-      // Appliquer l’ajustement des jours
       if (rule.days !== 0) {
         compareDate.setDate(compareDate.getDate() + rule.days);
       }
