@@ -7,8 +7,8 @@ import {
 } from '@mui/joy';
 import { toast } from 'react-hot-toast';
 import { formConfigToZodSchema } from '../formConfigToZodSchema';
-import { CREATE_DRAFT_USER, UPDATE_USER, DELETE_USER } from '../graphql/mutations';
-import { GET_FORM_CONFIG } from '../graphql/queries';
+import { CREATE_DRAFT_USER, CREATE_USER, DELETE_USER } from '../graphql/mutations';
+import { GET_FORM_CONFIG_BY_NAME } from '../graphql/queries';
 import { GET_USERS } from '../graphql/queries';
 
 const CreateUser = () => {
@@ -26,14 +26,14 @@ const CreateUser = () => {
     gender: '',
     address: '',
     phone: '',
-    isActive: true,
+    isActive: false, // Changé à false pour que l'utilisateur soit inactif par défaut
     hobbies: [],
     role: 'Utilisateur',
   });
   const [errors, setErrors] = useState({});
   const [hobbyInput, setHobbyInput] = useState('');
 
-  const { loading: configLoading, error: configError, data: configData } = useQuery(GET_FORM_CONFIG, {
+  const { loading: configLoading, error: configError, data: configData } = useQuery(GET_FORM_CONFIG_BY_NAME, {
     variables: { formName: 'createUser' },
   });
 
@@ -50,7 +50,7 @@ const CreateUser = () => {
     },
   });
 
-  const [updateUser, { loading: updateLoading }] = useMutation(UPDATE_USER, {
+  const [createUser, { loading: createLoading }] = useMutation(CREATE_USER, {
     onCompleted: () => {
       localStorage.removeItem('draftUserId');
       toast.success('User created successfully');
@@ -58,8 +58,8 @@ const CreateUser = () => {
       console.log('User created successfully');
     },
     onError: (error) => {
-      toast.error(`Error updating user: ${error.message}`);
-      console.error('Update user error:', error);
+      toast.error(`Error creating user: ${error.message}`);
+      console.error('Create user error:', error);
     },
     refetchQueries: [{ query: GET_USERS }],
   });
@@ -250,11 +250,17 @@ const CreateUser = () => {
     setErrors({});
     const input = { ...result.data };
     delete input.id;
-    console.log('Submitting data:', { id: formData.id, input });
+    console.log('Submitting data:', input);
     try {
-      await updateUser({
+      // Supprimer le draft user d'abord
+      if (formData.id) {
+        await deleteUser({ variables: { id: formData.id } });
+        console.log('Draft user deleted:', formData.id);
+      }
+      
+      // Créer l'utilisateur final
+      await createUser({
         variables: {
-          id: formData.id,
           input,
         },
       });
@@ -466,7 +472,7 @@ const CreateUser = () => {
               type="submit"
               variant="solid"
               color="primary"
-              loading={draftLoading || updateLoading}
+              loading={draftLoading || createLoading}
               fullWidth
             >
               Create

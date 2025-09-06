@@ -13,6 +13,8 @@ import CreateUser from './components/CreateUser';
 import EditUser from './components/EditUser';
 import FormConfigList from './components/FormConfigList';
 import FormConfigEdit from './components/FormConfigEdit';
+import WorkflowList from './components/WorkflowList';
+import WorkflowInstances from './components/WorkflowInstances';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -62,7 +64,6 @@ function App() {
       <CssVarsProvider theme={theme}>
         <CssBaseline />
         <Login onLoginSuccess={handleLoginSuccess} />
-        <Toaster position="top-right" />
       </CssVarsProvider>
     );
   }
@@ -79,6 +80,8 @@ function App() {
             <Route path="/users/:id/edit" element={<EditUser />} />
             <Route path="/form-configs" element={<FormConfigList />} />
             <Route path="/form-configs/:id/edit" element={<FormConfigEdit />} />
+            <Route path="/workflows" element={<WorkflowList />} />
+            <Route path="/workflow-instances" element={<WorkflowInstances />} />
           </Routes>
         </Layout>
       </Router>

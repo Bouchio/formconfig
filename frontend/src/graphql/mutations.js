@@ -3,13 +3,11 @@
 
 import { gql } from '@apollo/client';
 
-// Define GraphQL mutation to create a user
 export const CREATE_USER = gql`
   mutation CreateUser($input: UserInput!) {
     createUser(input: $input) {
       id
       matricule
-      NIR
       firstName
       lastName
       username
@@ -22,6 +20,8 @@ export const CREATE_USER = gql`
       hobbies
       isActive
       role
+      createdAt
+      updatedAt
     }
   }
 `;
@@ -36,8 +36,6 @@ export const CREATE_DRAFT_USER = gql`
   }
 `;
 
-// Mutation pour mettre à jour l'utilisateur existant (le brouillon)
-// Define GraphQL mutation to update a user
 export const UPDATE_USER = gql`
   mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
     updateUser(id: $id, input: $input) {
@@ -56,6 +54,8 @@ export const UPDATE_USER = gql`
       hobbies
       isActive
       role
+      createdAt
+      updatedAt
     }
   }
 `;
@@ -64,24 +64,12 @@ export const DELETE_USER = gql`
   mutation DeleteUser($id: ID!) {
     deleteUser(id: $id) {
       id
+      firstName
+      lastName
     }
   }
 `;
 
-export const UPDATE_FORM_CONFIG = gql`
-  mutation UpdateFormConfig($id: ID!, $input: UpdateFormConfigInput!) {
-    updateFormConfig(id: $id, input: $input) {
-      id
-      formName
-      description
-      config
-      createdAt
-      updatedAt
-    }
-  }
-`;
-
-// Mutations d'authentification
 export const LOGIN = gql`
   mutation Login($input: LoginInput!) {
     login(input: $input) {
@@ -104,6 +92,142 @@ export const LOGOUT = gql`
     logout {
       success
       message
+    }
+  }
+`;
+
+export const CREATE_FORM_CONFIG = gql`
+  mutation CreateFormConfig($input: FormConfigInput!) {
+    createFormConfig(input: $input) {
+      id
+      formName
+      description
+      config
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const UPDATE_FORM_CONFIG = gql`
+  mutation UpdateFormConfig($id: ID!, $input: UpdateFormConfigInput!) {
+    updateFormConfig(id: $id, input: $input) {
+      id
+      formName
+      description
+      config
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const DELETE_FORM_CONFIG = gql`
+  mutation DeleteFormConfig($id: ID!) {
+    deleteFormConfig(id: $id) {
+      id
+      formName
+    }
+  }
+`;
+
+// Mutations pour les workflows
+export const CREATE_WORKFLOW = gql`
+  mutation CreateWorkflow($input: WorkflowInput!) {
+    createWorkflow(input: $input) {
+      id
+      name
+      description
+      trigger
+      steps {
+        order
+        allowedRoles
+        actions {
+          name
+          nextStep
+          stateChanges {
+            field
+            value
+          }
+          allowMessage
+        }
+      }
+      isActive
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const UPDATE_WORKFLOW = gql`
+  mutation UpdateWorkflow($id: ID!, $input: UpdateWorkflowInput!) {
+    updateWorkflow(id: $id, input: $input) {
+      id
+      name
+      description
+      trigger
+      steps {
+        order
+        allowedRoles
+        actions {
+          name
+          nextStep
+          stateChanges {
+            field
+            value
+          }
+          allowMessage
+        }
+      }
+      isActive
+      createdAt
+      updatedAt
+    }
+  }
+`;
+
+export const DELETE_WORKFLOW = gql`
+  mutation DeleteWorkflow($id: ID!) {
+    deleteWorkflow(id: $id) {
+      id
+      name
+    }
+  }
+`;
+
+export const EXECUTE_WORKFLOW_ACTION = gql`
+  mutation ExecuteWorkflowAction($input: WorkflowActionExecutionInput!) {
+    executeWorkflowAction(input: $input) {
+      success
+      message
+      instance {
+        id
+        workflowId
+        workflow {
+          id
+          name
+          description
+        }
+        entityId
+        entityType
+        currentStep
+        status
+        history {
+          stepOrder
+          action
+          userId
+          user {
+            id
+            firstName
+            lastName
+            username
+          }
+          message
+          timestamp
+        }
+        createdAt
+        updatedAt
+      }
     }
   }
 `;

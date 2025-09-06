@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMutation } from '@apollo/client';
+import { useMutation, useApolloClient } from '@apollo/client';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Box, 
@@ -14,10 +14,13 @@ import { LOGOUT } from '../graphql/mutations.js';
 const Header = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const client = useApolloClient();
 
   const [logout, { loading }] = useMutation(LOGOUT, {
     onCompleted: (data) => {
       if (data.logout.success) {
+        // Vider le cache Apollo avant la déconnexion
+        client.clearStore();
         onLogout();
         navigate('/');
       }
@@ -25,6 +28,7 @@ const Header = ({ user, onLogout }) => {
     onError: (error) => {
       console.error('Erreur lors de la déconnexion:', error);
       // Forcer la déconnexion même en cas d'erreur
+      client.clearStore();
       onLogout();
       navigate('/');
     }
@@ -80,6 +84,22 @@ const Header = ({ user, onLogout }) => {
             sx={{ minWidth: 'auto' }}
           >
             Formulaires
+          </Button>
+
+          <Button
+            variant={isActive('/workflows') ? 'solid' : 'plain'}
+            onClick={() => navigate('/workflows')}
+            sx={{ minWidth: 'auto' }}
+          >
+            Workflows
+          </Button>
+
+          <Button
+            variant={isActive('/workflow-instances') ? 'solid' : 'plain'}
+            onClick={() => navigate('/workflow-instances')}
+            sx={{ minWidth: 'auto' }}
+          >
+            Instances
           </Button>
         </Stack>
 
