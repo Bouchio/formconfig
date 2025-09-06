@@ -15,7 +15,7 @@ const userSchema = new mongoose.Schema({
   hobbies: [String],
   isActive: {
     type: Boolean,
-    default: true
+    default: false
   },
   password: {
     type: String,
